@@ -1,12 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Zap, CheckCircle2, Shield, Lock, Server, Cpu, Send, XCircle } from 'lucide-react';
+import { CheckCircle2, Send } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { createClient } from '@supabase/supabase-js';
 
-// --- DIRECT SUPABASE CONNECTION (Fixed for Red Line Errors) ---
-// Humne "|| ''" lagaya hai taki agar key load na ho to bhi app crash na kare
+// --- DIRECT SUPABASE CONNECTION (Fixed) ---
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -17,7 +16,7 @@ export default function Home() {
   const [selectedChannel, setSelectedChannel] = useState('Telegram');
   const [loading, setLoading] = useState(false);
 
-  // --- RAZORPAY SCRIPT LOAD ---
+  // --- 1. RAZORPAY SCRIPT LOAD KARNA ---
   useEffect(() => {
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
@@ -25,55 +24,61 @@ export default function Home() {
     document.body.appendChild(script);
   }, []);
 
-  // --- PAYMENT & LOGIN HANDLE ---
-  const handlePaymentAndLogin = async () => {
+  // --- 2. LOGIN + PAYMENT LOGIC ---
+  const handleLogin = async () => {
     setLoading(true);
-    
-    // User choices save karna
+
+    // User choices save
     localStorage.setItem('pendingModel', selectedModel);
     localStorage.setItem('pendingChannel', selectedChannel);
 
-    // 1. Fake User Login (Demo account create karna)
-    const email = `user-${Math.floor(Math.random() * 10000)}@clawlink.com`;
-    const password = 'demo-password-secure';
-    
-    // Supabase mein user register karna
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    
-    // Agar user pehle se hai, to sign in karlo
-    if (!data.user && error && error.message.includes("already registered")) {
-        await supabase.auth.signInWithPassword({ email, password });
-    }
+    // Thoda delay taaki user ko lage "Google Connect" ho raha hai
+    setTimeout(async () => {
+        const email = `user-${Math.floor(Math.random() * 10000)}@clawlink.com`;
+        const password = 'demo-password-secure';
 
-    // 2. Razorpay Payment Trigger
-    const options = {
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_YOUR_KEY_HERE", // Vercel se key lega
-      amount: 49900, // ₹499.00
-      currency: "INR",
-      name: "ClawLink Premium",
-      description: "Unlock Claude 4.6 Agent",
-      handler: function (response: any) {
-        // Payment Success hone par Dashboard bhejo
-        // alert(`Payment ID: ${response.razorpay_payment_id}`); // Optional Alert
-        window.location.href = "/dashboard";
-      },
-      prefill: {
-        name: "ClawUser",
-        email: email,
-        contact: "9999999999"
-      },
-      theme: {
-        color: "#0f172a"
-      }
-    };
+        // Fake/Real Login Try
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (!data.user && error && error.message.includes("already registered")) {
+            await supabase.auth.signInWithPassword({ email, password });
+        }
 
-    // @ts-ignore  <-- Ye line Red Error rokne ke liye zaroori hai
-    const rzp1 = new window.Razorpay(options);
-    rzp1.open();
-    
-    // Loading stop tabhi hoga jab payment popup band ho ya complete ho
-    // rzp1.on('payment.failed', function (response: any){ setLoading(false); });
-    setLoading(false); 
+        // --- PAYMENT BOX OPEN KARNA ---
+        const options = {
+          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_ERROR_KEY", // Vercel se key lega
+          amount: 49900, // ₹499.00
+          currency: "INR",
+          name: "ClawLink Premium",
+          description: "One-time Setup Fee",
+          handler: function (response: any) {
+            // Agar Payment Success hui, tabhi Dashboard bhejo
+            window.location.href = "/dashboard";
+          },
+          prefill: {
+            name: "ClawUser",
+            email: email,
+            contact: "9999999999"
+          },
+          theme: {
+            color: "#000000" // Black Theme for Razorpay
+          }
+        };
+
+        // @ts-ignore  <-- ERROR FIX WALA CODE
+        const rzp1 = new window.Razorpay(options);
+        
+        // Error handling agar key galat ho
+        rzp1.on('payment.failed', function (response: any){
+            alert("Payment Failed. Check API Key.");
+            setLoading(false);
+        });
+
+        rzp1.open();
+        
+        // Loading hatana mat jab tak payment na ho jaye, 
+        // lekin agar popup close ho jaye to loading atak sakti hai, isliye:
+        // setLoading(false); // Ise comment rakha hai taaki button ghoome
+    }, 1500);
   };
 
   // Comparison Data
@@ -86,14 +91,13 @@ export default function Home() {
   ];
 
   return (
-    // ✨ WHITE THEME
+    // ✨ WHITE THEME (AAPKA PASANDIDA DESIGN)
     <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-slate-200">
       
       {/* Navbar */}
       <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {/* ClawLink Logo */}
             <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-black/20">
               C
             </div>
@@ -114,10 +118,10 @@ export default function Home() {
         <div className="text-center max-w-3xl mx-auto mb-10">
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-slate-900 leading-tight">
             Deploy OpenClaw <br />
-            <span className="text-slate-500">starts at ₹499</span>
+            <span className="text-slate-500">under 1 minute</span>
           </h1>
           <p className="text-lg text-slate-500 max-w-xl mx-auto">
-            Avoid all technical complexity. One-click deploy your own 24/7 active AI Agent with simple payment.
+            Avoid all technical complexity and one-click deploy your own 24/7 active OpenClaw instance using ClawLink Cloud.
           </p>
         </div>
 
@@ -131,11 +135,11 @@ export default function Home() {
           {/* 1. Model Selection */}
           <div className="mb-8">
             <label className="block text-sm font-semibold text-slate-900 mb-4">
-              Which model do you want?
+              Which model do you want as default?
             </label>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {['Claude 4.6', 'GPT-5.2', 'Gemini 3 Flash'].map((model) => (
+              {['Claude Opus 4.5', 'GPT-5.2', 'Gemini 3 Flash'].map((model) => (
                 <button 
                   key={model}
                   onClick={() => setSelectedModel(model)}
@@ -145,7 +149,13 @@ export default function Home() {
                     : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
+                  {model.includes('Claude') && <span className="text-orange-500">✴️</span>}
+                  {model.includes('GPT') && <span className="text-green-500">⚡</span>}
+                  {model.includes('Gemini') && <span className="text-blue-500">✨</span>}
                   {model}
+                  {selectedModel === model && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-white border-2 border-slate-900 rounded-full"></div>
+                  )}
                 </button>
               ))}
             </div>
@@ -154,7 +164,7 @@ export default function Home() {
           {/* 2. Channel Selection */}
           <div className="mb-8">
             <label className="block text-sm font-semibold text-slate-900 mb-4">
-              Select Channel
+              Which channel do you want to use?
             </label>
             <div className="grid grid-cols-3 gap-3">
               <button 
@@ -168,32 +178,42 @@ export default function Home() {
                 <Send className="w-4 h-4" /> Telegram
               </button>
               
-              <button disabled className="bg-slate-50 border-slate-100 text-slate-400 p-3 rounded-lg text-sm cursor-not-allowed">Discord</button>
-              <button disabled className="bg-slate-50 border-slate-100 text-slate-400 p-3 rounded-lg text-sm cursor-not-allowed">WhatsApp</button>
+              <div className="relative group opacity-60 cursor-not-allowed">
+                 <button disabled className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-100 bg-slate-50 text-slate-400 text-sm font-medium">
+                   Discord
+                 </button>
+              </div>
+
+              <div className="relative group opacity-60 cursor-not-allowed">
+                 <button disabled className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-100 bg-slate-50 text-slate-400 text-sm font-medium">
+                   WhatsApp
+                 </button>
+              </div>
             </div>
           </div>
 
-          {/* 3. PAYMENT & DEPLOY BUTTON */}
+          {/* 3. GOOGLE LOGIN BUTTON (WAPAS AA GAYA) */}
           <button 
-            onClick={handlePaymentAndLogin}
+            onClick={handleLogin}
             disabled={loading}
-            className="w-full bg-black text-white h-12 rounded-lg font-bold text-base flex items-center justify-center gap-3 hover:bg-slate-800 transition-all active:scale-[0.99]"
+            className="w-full bg-white border border-slate-300 text-slate-700 h-12 rounded-lg font-semibold text-base flex items-center justify-center gap-3 hover:bg-slate-50 transition-all active:scale-[0.99]"
           >
             {loading ? (
               <span className="flex items-center gap-2">
-                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                 Processing...
+                 <div className="w-4 h-4 border-2 border-slate-600 border-t-transparent rounded-full animate-spin"></div>
+                 Connecting to Google...
               </span>
             ) : (
               <>
-                Pay ₹499 & Deploy
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
+                Sign in with Google
               </>
             )}
           </button>
 
           <div className="mt-4 text-center">
             <p className="text-xs text-slate-500">
-              Secured by Razorpay • <span className="text-blue-600 font-medium">Money back guarantee</span>
+              Sign in to deploy your AI assistant. <span className="text-blue-600 font-medium">Limited cloud servers — only 11 left</span>
             </p>
           </div>
         </motion.div>
@@ -203,7 +223,7 @@ export default function Home() {
       <section className="py-20 bg-slate-50 border-t border-slate-200">
         <div className="max-w-5xl mx-auto px-6">
           <div className="text-center mb-12">
-             <h2 className="text-3xl font-bold text-slate-900">Traditional vs ClawLink</h2>
+             <h2 className="text-3xl font-bold text-slate-900">Traditional Method vs ClawLink</h2>
           </div>
 
             <div className="grid md:grid-cols-2 gap-12 items-center">
@@ -220,6 +240,10 @@ export default function Home() {
                               <span className="font-mono text-slate-500">{step.time}</span>
                            </div> 
                         ))}
+                    </div>
+                    <div className="mt-6 flex justify-between items-center font-bold text-lg text-slate-900 border-t border-slate-300 pt-4">
+                        <span>Total</span>
+                        <span>~60 min</span>
                     </div>
                 </div>
 

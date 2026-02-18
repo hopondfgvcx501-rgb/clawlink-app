@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Zap, CheckCircle2, Shield, Lock, Server, Cpu, Send, XCircle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { createClient } from '@supabase/supabase-js';
 
-// --- DIRECT SUPABASE CONNECTION (No errors) ---
+// --- DIRECT SUPABASE CONNECTION (Fixed for Red Line Errors) ---
+// Humne "|| ''" lagaya hai taki agar key load na ho to bhi app crash na kare
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 );
 
 export default function Home() {
@@ -16,35 +17,63 @@ export default function Home() {
   const [selectedChannel, setSelectedChannel] = useState('Telegram');
   const [loading, setLoading] = useState(false);
 
-  // --- SMART LOGIN (Bina Google Setup ke chalega) ---
-  const handleLogin = async () => {
+  // --- RAZORPAY SCRIPT LOAD ---
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  // --- PAYMENT & LOGIN HANDLE ---
+  const handlePaymentAndLogin = async () => {
     setLoading(true);
     
-    // User choices save
+    // User choices save karna
     localStorage.setItem('pendingModel', selectedModel);
     localStorage.setItem('pendingChannel', selectedChannel);
 
-    // 1.5 Second ka fake loading user ko feel dene ke liye
-    setTimeout(async () => {
-        const email = `user-${Math.floor(Math.random() * 10000)}@clawlink.com`;
-        const password = 'demo-password-secure';
+    // 1. Fake User Login (Demo account create karna)
+    const email = `user-${Math.floor(Math.random() * 10000)}@clawlink.com`;
+    const password = 'demo-password-secure';
+    
+    // Supabase mein user register karna
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    
+    // Agar user pehle se hai, to sign in karlo
+    if (!data.user && error && error.message.includes("already registered")) {
+        await supabase.auth.signInWithPassword({ email, password });
+    }
 
-        // Signup try
-        const { data, error } = await supabase.auth.signUp({
-            email,
-            password,
-        });
+    // 2. Razorpay Payment Trigger
+    const options = {
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_test_YOUR_KEY_HERE", // Vercel se key lega
+      amount: 49900, // ₹499.00
+      currency: "INR",
+      name: "ClawLink Premium",
+      description: "Unlock Claude 4.6 Agent",
+      handler: function (response: any) {
+        // Payment Success hone par Dashboard bhejo
+        // alert(`Payment ID: ${response.razorpay_payment_id}`); // Optional Alert
+        window.location.href = "/dashboard";
+      },
+      prefill: {
+        name: "ClawUser",
+        email: email,
+        contact: "9999999999"
+      },
+      theme: {
+        color: "#0f172a"
+      }
+    };
 
-        // Agar user pehle se hai, login karo
-        if (data.user || (error && error.message.includes("already registered"))) {
-            if (!data.user) {
-                await supabase.auth.signInWithPassword({ email, password });
-            }
-            window.location.href = "/dashboard";
-        } else {
-             window.location.href = "/dashboard";
-        }
-    }, 1500);
+    // @ts-ignore  <-- Ye line Red Error rokne ke liye zaroori hai
+    const rzp1 = new window.Razorpay(options);
+    rzp1.open();
+    
+    // Loading stop tabhi hoga jab payment popup band ho ya complete ho
+    // rzp1.on('payment.failed', function (response: any){ setLoading(false); });
+    setLoading(false); 
   };
 
   // Comparison Data
@@ -64,7 +93,7 @@ export default function Home() {
       <nav className="fixed top-0 w-full z-50 bg-white/80 backdrop-blur-md border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            {/* ClawLink Logo (Black on White) */}
+            {/* ClawLink Logo */}
             <div className="w-8 h-8 bg-black rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-black/20">
               C
             </div>
@@ -85,10 +114,10 @@ export default function Home() {
         <div className="text-center max-w-3xl mx-auto mb-10">
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6 text-slate-900 leading-tight">
             Deploy OpenClaw <br />
-            <span className="text-slate-500">under 1 minute</span>
+            <span className="text-slate-500">starts at ₹499</span>
           </h1>
           <p className="text-lg text-slate-500 max-w-xl mx-auto">
-            Avoid all technical complexity and one-click deploy your own 24/7 active OpenClaw instance using ClawLink Cloud.
+            Avoid all technical complexity. One-click deploy your own 24/7 active AI Agent with simple payment.
           </p>
         </div>
 
@@ -102,11 +131,11 @@ export default function Home() {
           {/* 1. Model Selection */}
           <div className="mb-8">
             <label className="block text-sm font-semibold text-slate-900 mb-4">
-              Which model do you want as default?
+              Which model do you want?
             </label>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {['Claude Opus 4.5', 'GPT-5.2', 'Gemini 3 Flash'].map((model) => (
+              {['Claude 4.6', 'GPT-5.2', 'Gemini 3 Flash'].map((model) => (
                 <button 
                   key={model}
                   onClick={() => setSelectedModel(model)}
@@ -116,13 +145,7 @@ export default function Home() {
                     : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
-                  {model.includes('Claude') && <span className="text-orange-500">✴️</span>}
-                  {model.includes('GPT') && <span className="text-green-500">⚡</span>}
-                  {model.includes('Gemini') && <span className="text-blue-500">✨</span>}
                   {model}
-                  {selectedModel === model && (
-                      <div className="absolute -top-1 -right-1 w-3 h-3 bg-white border-2 border-slate-900 rounded-full"></div>
-                  )}
                 </button>
               ))}
             </div>
@@ -131,7 +154,7 @@ export default function Home() {
           {/* 2. Channel Selection */}
           <div className="mb-8">
             <label className="block text-sm font-semibold text-slate-900 mb-4">
-              Which channel do you want to use for sending messages?
+              Select Channel
             </label>
             <div className="grid grid-cols-3 gap-3">
               <button 
@@ -145,54 +168,42 @@ export default function Home() {
                 <Send className="w-4 h-4" /> Telegram
               </button>
               
-              <div className="relative group opacity-60 cursor-not-allowed">
-                 <button disabled className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-100 bg-slate-50 text-slate-400 text-sm font-medium">
-                    Discord
-                 </button>
-                 <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] text-slate-400 font-medium whitespace-nowrap">Coming soon</span>
-              </div>
-
-              <div className="relative group opacity-60 cursor-not-allowed">
-                 <button disabled className="w-full flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-100 bg-slate-50 text-slate-400 text-sm font-medium">
-                    WhatsApp
-                 </button>
-                 <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] text-slate-400 font-medium whitespace-nowrap">Coming soon</span>
-              </div>
+              <button disabled className="bg-slate-50 border-slate-100 text-slate-400 p-3 rounded-lg text-sm cursor-not-allowed">Discord</button>
+              <button disabled className="bg-slate-50 border-slate-100 text-slate-400 p-3 rounded-lg text-sm cursor-not-allowed">WhatsApp</button>
             </div>
           </div>
 
-          {/* 3. GOOGLE LOGIN BUTTON */}
+          {/* 3. PAYMENT & DEPLOY BUTTON */}
           <button 
-            onClick={handleLogin}
+            onClick={handlePaymentAndLogin}
             disabled={loading}
-            className="w-full bg-white border border-slate-300 text-slate-700 h-12 rounded-lg font-semibold text-base flex items-center justify-center gap-3 hover:bg-slate-50 transition-all active:scale-[0.99]"
+            className="w-full bg-black text-white h-12 rounded-lg font-bold text-base flex items-center justify-center gap-3 hover:bg-slate-800 transition-all active:scale-[0.99]"
           >
             {loading ? (
               <span className="flex items-center gap-2">
-                 <div className="w-4 h-4 border-2 border-slate-600 border-t-transparent rounded-full animate-spin"></div>
-                 Connecting to Google...
+                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                 Processing...
               </span>
             ) : (
               <>
-                <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
-                Sign in with Google
+                Pay ₹499 & Deploy
               </>
             )}
           </button>
 
           <div className="mt-4 text-center">
             <p className="text-xs text-slate-500">
-              Sign in to deploy your AI assistant. <span className="text-blue-600 font-medium">Limited cloud servers — only 11 left</span>
+              Secured by Razorpay • <span className="text-blue-600 font-medium">Money back guarantee</span>
             </p>
           </div>
         </motion.div>
       </section>
 
-      {/* --- COMPARISON TABLE (BRANDED CLAWLINK) --- */}
+      {/* --- COMPARISON TABLE --- */}
       <section className="py-20 bg-slate-50 border-t border-slate-200">
         <div className="max-w-5xl mx-auto px-6">
           <div className="text-center mb-12">
-             <h2 className="text-3xl font-bold text-slate-900">Traditional Method vs ClawLink</h2>
+             <h2 className="text-3xl font-bold text-slate-900">Traditional vs ClawLink</h2>
           </div>
 
             <div className="grid md:grid-cols-2 gap-12 items-center">
@@ -210,13 +221,6 @@ export default function Home() {
                            </div> 
                         ))}
                     </div>
-                    <div className="mt-6 flex justify-between items-center font-bold text-lg text-slate-900 border-t border-slate-300 pt-4">
-                        <span>Total</span>
-                        <span>~60 min</span>
-                    </div>
-                    <p className="text-xs text-red-500 mt-2 italic">
-                        *If you're non-technical, multiply this by 10.
-                    </p>
                 </div>
 
                 {/* ClawLink Side */}
@@ -226,19 +230,12 @@ export default function Home() {
                     <div className="text-5xl font-black text-slate-900 mb-4 tracking-tighter">
                         &lt;1 min
                     </div>
-                    <p className="text-slate-600 mb-6 text-sm leading-relaxed">
-                        Pick a model, connect Telegram, deploy — done under 1 minute.
-                        Servers, SSH, and OpenClaw Environment are already set up.
-                    </p>
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
                             <CheckCircle2 className="w-4 h-4 text-green-600" /> Instant Setup
                         </div>
                         <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
                             <CheckCircle2 className="w-4 h-4 text-green-600" /> Secure Connection
-                        </div>
-                        <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
-                            <CheckCircle2 className="w-4 h-4 text-green-600" /> No Maintenance
                         </div>
                     </div>
                 </div>
